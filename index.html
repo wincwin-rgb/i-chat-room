@@ -727,10 +727,11 @@ textarea::placeholder { color: var(--ink3); }
 
 <!-- ══════════════ FIREBASE SDK ══════════════ -->
 <script type="module">
-// ╔══════════════════════════════════════════════════════╗
-// ║  在這裡貼入你的 Firebase 設定                         ║
-// ║  前往 Firebase Console → 專案設定 → 你的應用程式      ║
-// ╚══════════════════════════════════════════════════════╝
+// ──────────── Firebase 初始化 ────────────
+import { initializeApp }          from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, push, set, onValue, serverTimestamp, get, onDisconnect }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
 const firebaseConfig = {
   apiKey:            "AIzaSyAP1Xp6M7dnNzbL2kOLhQfdDqtDA6Zoci8",
   authDomain:        "ai-chat-room-c3352.firebaseapp.com",
@@ -740,11 +741,6 @@ const firebaseConfig = {
   messagingSenderId: "958010658776",
   appId:             "1:958010658776:web:5d7c15a5149055bf7e6cad"
 };
-
-// ──────────── Firebase 初始化 ────────────
-import { initializeApp }          from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, push, set, onValue, serverTimestamp, get, onDisconnect }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const isConfigured = firebaseConfig.apiKey !== "YOUR_API_KEY";
 
