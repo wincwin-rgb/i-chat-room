@@ -439,6 +439,64 @@ input[type=text]::placeholder { color: var(--ink3); }
 }
 .copy-btn:hover { background: var(--accent-l); }
 
+/* ── 圖片上傳按鈕 ────────────────────────── */
+.upload-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--ink3);
+  padding: 4px;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color .15s;
+  flex-shrink: 0;
+}
+.upload-btn:hover { color: var(--accent); }
+.upload-btn svg { width:18px; height:18px; }
+#file-input { display: none; }
+
+/* 圖片預覽縮圖（泡泡內） */
+.bubble img {
+  max-width: 100%;
+  max-height: 280px;
+  border-radius: 4px;
+  display: block;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.bubble img:first-child { margin-top: 0; }
+
+/* 上傳中 overlay */
+.upload-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink3);
+  font-family: 'IBM Plex Mono', monospace;
+  padding: 6px 0 2px;
+}
+.upload-spinner {
+  width: 14px; height: 14px;
+  border: 2px solid var(--rule);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Cloudinary 設定提示（未設定時顯示） */
+.cloudinary-warn {
+  font-size: 11px;
+  color: var(--ink3);
+  font-family: 'IBM Plex Mono', monospace;
+  padding: 4px 0 0;
+  text-align: center;
+}
+
 /* INPUT BAR */
 .input-bar {
   padding: 14px 18px;
@@ -655,14 +713,25 @@ textarea::placeholder { color: var(--ink3); }
         <div class="share-box" id="share-url" onclick="copyLink()">載入中...</div>
         <button class="copy-btn" onclick="copyLink()">複製連結</button>
       </div>
+      <div class="sidebar-section" id="cloudinary-status-section" style="display:none">
+        <h4>圖片上傳</h4>
+        <div class="cloudinary-warn" id="cloudinary-status"></div>
+      </div>
     </div>
   </div>
 
   <div class="input-bar">
     <div class="mention-menu" id="mention-menu"></div>
+    <input type="file" id="file-input" accept="image/*" onchange="handleFileSelect(event)">
     <div class="input-inner">
+      <button class="upload-btn" onclick="document.getElementById('file-input').click()" title="上傳圖片">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21,15 16,10 5,21"/>
+        </svg>
+      </button>
       <textarea id="txt" rows="1"
-        placeholder="輸入訊息… 用 @ai 呼叫 AI，Enter 發送，Shift+Enter 換行"
+        placeholder="輸入訊息… @AI 呼叫助手，Enter 發送"
         onkeydown="onKey(event)"
         oninput="onInput(this)"></textarea>
       <button class="send-btn" id="send-btn" onclick="send()">
@@ -719,8 +788,7 @@ function esc(s) {
 }
 function highlightMention(s) {
   return s.replace(/@(\w+)/g, function(match, name) {
-    var isAI = /^(ai|groq|gemini|claude)$/i.test(name);
-    var color = isAI ? 'var(--accent)' : 'var(--u2)';
+    var color = /^ai$/i.test(name) ? 'var(--accent)' : 'var(--u2)';
     return '<strong style="color:' + color + '">' + match + '</strong>';
   });
 }
@@ -812,6 +880,17 @@ async function enter(name, rid) {
 
   document.getElementById('txt').focus();
 
+  // Cloudinary 狀態提示
+  const csSection = document.getElementById('cloudinary-status-section');
+  const csLabel   = document.getElementById('cloudinary-status');
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_PRESET) {
+    csSection.style.display = '';
+    csLabel.textContent = '⚙️ 尚未設定，圖片上傳不可用';
+  } else {
+    csSection.style.display = '';
+    csLabel.textContent = '✓ 已設定，最大 10MB';
+  }
+
   // BUG5: visibilitychange 只添加一次，切回後清除未讀數
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
@@ -841,7 +920,7 @@ function renderMessages(data) {
     } else {
       appendMsg(m);
       // 被 @提及時，頁面內 toast 提示
-      if (m.userId !== myId && new RegExp('@' + myName, 'i').test(m.text || '')) {
+      if (m.userId !== myId && m.type !== 'image' && new RegExp('@' + myName, 'i').test(m.text || '')) {
         toast('🔔 ' + (m.userName || 'AI') + ' 提及了你！');
       }
     }
@@ -874,12 +953,22 @@ function appendMsg(m) {
   const g = document.createElement('div');
   g.className = 'msg-group' + (isMe ? ' mine' : '') + (isAi ? ' ai-group' : '');
 
+  // 訊息內容：圖片 or 文字
+  let bubbleContent = '';
+  if (m.type === 'image') {
+    // 圖片訊息
+    const caption = m.text ? '<div style="font-size:12px;margin-top:6px;opacity:.8">' + esc(m.text) + '</div>' : '';
+    bubbleContent = '<img src="' + esc(m.imageUrl) + '" alt="圖片" onclick="window.open(this.src)">' + caption;
+  } else {
+    bubbleContent = highlightMention(esc(m.text));
+  }
+
   g.innerHTML = `
     <div class="msg-meta">
       <div class="meta-avatar" style="background:${color}">${initials}</div>
       <span class="meta-name">${dispName}</span>
     </div>
-    <div class="bubble">${highlightMention(esc(m.text))}</div>
+    <div class="bubble">${bubbleContent}</div>
     <span class="bubble-time">${m.time || ''}</span>
   `;
   wrap.appendChild(g);
@@ -895,7 +984,8 @@ function appendMsg(m) {
   // 瀏覽器通知：非自己的訊息 + 頁面未聚焦
   if (!isMe && document.hidden && 'Notification' in window && Notification.permission === 'granted') {
     const senderName = isAi ? (m.userName + ' AI') : esc(m.userName);
-    const body = m.text.length > 60 ? m.text.slice(0, 60) + '…' : m.text;
+    const notifyText = m.type === 'image' ? '[圖片]' : (m.text || '');
+    const body = notifyText.length > 60 ? notifyText.slice(0, 60) + '…' : notifyText;
     // 若被 @自己名字 就加 🔔
     const isMentioned = new RegExp('@' + myName, 'i').test(m.text);
     const title = isMentioned ? `🔔 ${senderName} 提及了你` : `💬 ${senderName}`;
@@ -992,6 +1082,88 @@ window.resize = function(el) {
   el.style.height = Math.min(el.scrollHeight, 120) + 'px';
 };
 
+// ──────────── 圖片上傳（Cloudinary 免費方案） ────────────
+// ★ 使用方式：
+//   1. 前往 https://cloudinary.com 免費註冊（不需信用卡）
+//   2. 登入後在 Dashboard 找到：Cloud Name
+//   3. 左側選單 Settings → Upload → Add upload preset
+//      Mode 選 "Unsigned"，記下 Preset Name
+//   4. 填入下方兩個值即可使用
+const CLOUDINARY_CLOUD_NAME = 'dcj6zrj94';   // ← 填入你的 Cloud Name，例如 'abc123xyz'
+const CLOUDINARY_PRESET     = 'chatroom';   // ← 填入 Unsigned Preset Name，例如 'chat_upload'
+
+// 上傳限制
+const MAX_FILE_SIZE_MB = 10;        // 最大 10MB
+const ALLOWED_TYPES    = ['image/jpeg','image/png','image/gif','image/webp'];
+
+window.handleFileSelect = async function(event) {
+  const file = event.target.files[0];
+  event.target.value = ''; // 重置，允許重複選同一檔案
+  if (!file) return;
+
+  // 檢查 Cloudinary 是否設定
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_PRESET) {
+    toast('⚙️ 請先設定 Cloudinary Cloud Name 和 Preset');
+    return;
+  }
+
+  // 格式檢查
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    toast('❌ 僅支援 JPG、PNG、GIF、WebP 格式');
+    return;
+  }
+
+  // 大小檢查
+  if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+    toast('❌ 圖片超過 ' + MAX_FILE_SIZE_MB + 'MB 上限');
+    return;
+  }
+
+  // 顯示上傳中提示
+  const wrap = document.getElementById('msgs');
+  const ind  = document.createElement('div');
+  ind.id = 'uploading';
+  ind.className = 'upload-progress';
+  ind.innerHTML = '<div class="upload-spinner"></div><span>上傳圖片中…</span>';
+  wrap.appendChild(ind);
+  wrap.scrollTop = wrap.scrollHeight;
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', CLOUDINARY_PRESET);
+    formData.append('folder', 'chat_ai');
+
+    const res  = await fetch(
+      'https://api.cloudinary.com/v1_1/' + CLOUDINARY_CLOUD_NAME + '/image/upload',
+      { method: 'POST', body: formData }
+    );
+
+    document.getElementById('uploading')?.remove();
+
+    if (!res.ok) throw new Error('Upload failed: ' + res.status);
+    const data = await res.json();
+    const imageUrl = data.secure_url;
+
+    // 將圖片訊息寫入 Firebase
+    await push(ref(db, 'rooms/' + roomId + '/messages'), {
+      type: 'image',
+      userId: myId,
+      userName: myName,
+      colorIdx: myColorIdx,
+      imageUrl: imageUrl,
+      text: '',        // 選填：圖片說明
+      time: now(),
+      ts: serverTimestamp()
+    });
+
+  } catch(err) {
+    document.getElementById('uploading')?.remove();
+    console.error('[Upload]', err);
+    toast('❌ 圖片上傳失敗，請稍後再試');
+  }
+};
+
 // ──────────── AI（透過 Apps Script Proxy 呼叫 Groq，避免 CORS） ────────────
 // Key 藏在 Apps Script 後端，前端只傳 messages，不暴露 Key
 const PROXY_URL   = 'https://script.google.com/macros/s/AKfycbyXXj4tTxEIjYjAc1i1pYoQCClqEw6OKHgrz9j7JW71iuWSYbOCdJQwhWBELRUoJyvC/exec';
@@ -1001,7 +1173,7 @@ const AI_TIMEOUT  = 30000;
 const AI_CFG = { name: 'AI', avatar: 'AI', color: '#6c3fa0' };
 
 function isAITrigger(text) {
-  return /@(ai/i.test(text);
+  return /@ai/i.test(text);
 }
 
 async function callAI(triggerText) {
@@ -1129,12 +1301,9 @@ window.onInput = function onInput(el) {
 
 function showMentionMenu(query) {
   const menu = document.getElementById('mention-menu');
-  // Build candidate list: AI + alias + room users
+  // Build candidate list: AI + room users
   const candidates = [
-    { id: 'ai',     name: 'AI',     desc: 'AI 助手（Groq）', color: '#6c3fa0', initial: 'AI' },
-    { id: 'groq',   name: 'Groq',   desc: 'AI 助手（alias）', color: '#f5a623', initial: 'G' },
-    { id: 'gemini', name: 'Gemini', desc: 'AI 助手（alias）', color: '#1a6ef5', initial: 'G' },
-    { id: 'claude', name: 'Claude', desc: 'AI 助手（alias）', color: '#8b5cf6', initial: 'C' }
+    { id: 'ai', name: 'AI', desc: 'AI 助手', color: '#6c3fa0', initial: 'AI' }
   ];
   // Add room users (excluding self)
   Object.entries(window._roomUsers || {}).forEach(([id, u]) => {
