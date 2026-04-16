@@ -800,20 +800,34 @@ function toast(msg) {
 }
 
 // ──────────── Lobby ────────────
-window.createRoom = function() {
+window.createRoom = async function() {
   const name = document.getElementById('name-in').value.trim();
   if (!name) { toast('請輸入名稱'); return; }
   if (!isConfigured) { toast('請先填入 Firebase 設定'); return; }
-  enter(name, genId(6));
+  const btn = document.querySelector('.btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '建立中…'; }
+  try {
+    await enter(name, genId(6));
+  } catch(e) {
+    toast('❌ 建立失敗：' + (e.message || '請檢查網路連線'));
+    if (btn) { btn.disabled = false; btn.textContent = '＋ 建立新對話室'; }
+  }
 };
 
-window.joinRoom = function() {
+window.joinRoom = async function() {
   const name = document.getElementById('name-in').value.trim();
   const rid  = document.getElementById('room-in').value.trim().toUpperCase();
   if (!name) { toast('請輸入名稱'); return; }
   if (!rid)  { toast('請輸入房間代碼'); return; }
   if (!isConfigured) { toast('請先填入 Firebase 設定'); return; }
-  enter(name, rid);
+  const btn = document.querySelector('.btn-secondary');
+  if (btn) { btn.disabled = true; btn.textContent = '加入中…'; }
+  try {
+    await enter(name, rid);
+  } catch(e) {
+    toast('❌ 加入失敗：' + (e.message || '請檢查房間代碼或網路連線'));
+    if (btn) { btn.disabled = false; btn.textContent = '加入對話室 →'; }
+  }
 };
 
 // ──────────── 進入房間 ────────────
@@ -826,7 +840,8 @@ async function enter(name, rid) {
   const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
   db = getDatabase(app);
 
-  // 分配顏色（取已用顏色後，選第一個未用的）
+  // ── Firebase 操作全部包在 try/catch，任何失敗都拋出給 createRoom/joinRoom 處理 ──
+  // 分配顏色
   const usersSnap = await get(ref(db, `rooms/${roomId}/users`));
   const taken = usersSnap.exists()
     ? Object.values(usersSnap.val()).map(u => u.colorIdx)
@@ -843,24 +858,27 @@ async function enter(name, rid) {
     type: 'system', text: `${myName} 加入了對話室`, ts: serverTimestamp()
   });
 
-  // 離開時用 onDisconnect 確保清除（即使關閉頁面也有效）
-  const userRef = ref(db, `rooms/${roomId}/users/${myId}`);
-  onDisconnect(userRef).remove();
-  // 同時在 messages 寫一條離開訊息（onDisconnect 也觸發）
+  // B4: pagehide 用具名函數，避免重複添加
+  if (!window._pagehideAdded) {
+    window._pagehideAdded = true;
+    window.addEventListener('pagehide', () => {
+      if (db && roomId && myId) set(ref(db, `rooms/${roomId}/users/${myId}`), null);
+    });
+  }
+
+  // onDisconnect 清除用戶與離開訊息
+  const userRef  = ref(db, `rooms/${roomId}/users/${myId}`);
   const leaveRef = ref(db, `rooms/${roomId}/messages/leave_${myId}`);
+  onDisconnect(userRef).remove();
   onDisconnect(leaveRef).set({
     type: 'system', text: `${myName} 離開了對話室`, ts: Date.now()
-  });
-  // 備用：頁面 unload 時也嘗試（同步版本）
-  window.addEventListener('pagehide', () => {
-    set(ref(db, `rooms/${roomId}/users/${myId}`), null);
   });
 
   // 切換介面
   document.getElementById('lobby').style.display = 'none';
   document.getElementById('app').style.display   = 'flex';
 
-  // 更新 header 資訊
+  // 更新 header
   document.getElementById('room-badge').textContent = roomId;
   document.getElementById('mobile-room-code').textContent = roomId;
   const url = location.href.split('?')[0] + '?r=' + roomId;
@@ -883,20 +901,18 @@ async function enter(name, rid) {
   // Cloudinary 狀態提示
   const csSection = document.getElementById('cloudinary-status-section');
   const csLabel   = document.getElementById('cloudinary-status');
-  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_PRESET) {
-    csSection.style.display = '';
-    csLabel.textContent = '⚙️ 尚未設定，圖片上傳不可用';
-  } else {
-    csSection.style.display = '';
-    csLabel.textContent = '✓ 已設定，最大 10MB';
-  }
+  csSection.style.display = '';
+  csLabel.textContent = (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_PRESET)
+    ? '⚙️ 尚未設定，圖片上傳不可用'
+    : '✓ 已設定，最大 10MB';
 
-  // BUG5: visibilitychange 只添加一次，切回後清除未讀數
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) {
-      document.title = 'chat.ai · ' + roomId;
-    }
-  });
+  // B3: visibilitychange 只添加一次
+  if (!window._visibilityAdded) {
+    window._visibilityAdded = true;
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) document.title = 'chat.ai · ' + (roomId || '');
+    });
+  }
 
   // 請求瀏覽器通知權限
   if ('Notification' in window && Notification.permission === 'default') {
@@ -1291,9 +1307,9 @@ window.onInput = function onInput(el) {
   const before = val.slice(0, pos);
   const atIdx = before.lastIndexOf('@');
   if (atIdx >= 0 && !before.slice(atIdx + 1).includes(' ')) {
-    const query = before.slice(atIdx + 1).toLowerCase();
+    const mentionQuery = before.slice(atIdx + 1).toLowerCase();
     mentionStart = atIdx;
-    showMentionMenu(query);
+    showMentionMenu(mentionQuery);
   } else {
     hideMentionMenu();
   }
