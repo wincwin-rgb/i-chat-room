@@ -1001,7 +1001,7 @@ const AI_TIMEOUT  = 30000;
 const AI_CFG = { name: 'AI', avatar: 'AI', color: '#6c3fa0' };
 
 function isAITrigger(text) {
-  return /@(ai|groq|gemini|claude)/i.test(text);
+  return /@(ai/i.test(text);
 }
 
 async function callAI(triggerText) {
