@@ -788,8 +788,24 @@ function esc(s) {
 }
 function highlightMention(s) {
   return s.replace(/@(\w+)/g, function(match, name) {
-    var color = /^ai$/i.test(name) ? 'var(--accent)' : 'var(--u2)';
-    return '<strong style="color:' + color + '">' + match + '</strong>';
+    // 白底 + 深字 pill，在所有泡泡背景（白/橘紅/深紫）下均清晰可讀
+    var isAI = /^ai$/i.test(name);
+    var bg      = '#ffffff';
+    var color   = isAI ? '#c8410a' : '#1a4a8a';
+    var border  = isAI ? '#c8410a' : '#1a4a8a';
+    return '<strong style="'
+      + 'display:inline-block;'
+      + 'background:' + bg + ';'
+      + 'color:' + color + ';'
+      + 'border:1px solid ' + border + ';'
+      + 'border-radius:4px;'
+      + 'padding:0 5px;'
+      + 'font-size:0.88em;'
+      + 'font-family:IBM Plex Mono,monospace;'
+      + 'font-weight:600;'
+      + 'line-height:1.5;'
+      + 'vertical-align:baseline;'
+      + '">' + match + '</strong>';
   });
 }
 function toast(msg) {
@@ -840,7 +856,6 @@ async function enter(name, rid) {
   const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
   db = getDatabase(app);
 
-  // ── Firebase 操作全部包在 try/catch，任何失敗都拋出給 createRoom/joinRoom 處理 ──
   // 分配顏色
   const usersSnap = await get(ref(db, `rooms/${roomId}/users`));
   const taken = usersSnap.exists()
@@ -858,7 +873,7 @@ async function enter(name, rid) {
     type: 'system', text: `${myName} 加入了對話室`, ts: serverTimestamp()
   });
 
-  // B4: pagehide 用具名函數，避免重複添加
+  // B4: pagehide 只添加一次
   if (!window._pagehideAdded) {
     window._pagehideAdded = true;
     window.addEventListener('pagehide', () => {
@@ -866,7 +881,7 @@ async function enter(name, rid) {
     });
   }
 
-  // onDisconnect 清除用戶與離開訊息
+  // onDisconnect 清除
   const userRef  = ref(db, `rooms/${roomId}/users/${myId}`);
   const leaveRef = ref(db, `rooms/${roomId}/messages/leave_${myId}`);
   onDisconnect(userRef).remove();
