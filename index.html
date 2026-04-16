@@ -29,8 +29,8 @@
   --rule:     #e0ddd4;
   --accent:   #c8410a;
   --accent-l: #e8e0d8;
-  --ai-bg:    #1a1a1a;
-  --ai-ink:   #f0ede6;
+  --ai-bg:    #2d1f4e;
+  --ai-ink:   #ede9f8;
 
   --u0: #c8410a;
   --u1: #2a6e4a;
@@ -352,7 +352,7 @@ input[type=text]::placeholder { color: var(--ink3); }
 /* typing */
 .typing-bubble {
   background: var(--ai-bg);
-  border: 1px solid var(--ai-bg);
+  border: 1px solid #4a3a7a;
   color: var(--ai-ink);
   padding: 12px 16px;
   border-radius: 2px 2px 10px 2px;
@@ -488,52 +488,6 @@ textarea::placeholder { color: var(--ink3); }
 .send-btn svg { width:14px; height:14px; fill: white; }
 
 /* TOAST */
-/* ── MENTION PICKER ─────────────────────── */
-.mention-picker {
-  display: none;
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  right: 0;
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: 8px 8px 0 0;
-  overflow: hidden;
-  z-index: 50;
-  box-shadow: 0 -4px 16px rgba(0,0,0,.08);
-}
-.mention-picker.open { display: block; }
-.mention-picker-title {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--ink3);
-  padding: 8px 14px 4px;
-}
-.mention-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
-  cursor: pointer;
-  transition: background .1s;
-  font-size: 14px;
-  color: var(--ink);
-}
-.mention-item:hover, .mention-item.active {
-  background: var(--accent-l);
-}
-.mention-item .m-avatar {
-  width: 26px; height: 26px;
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 500; color: #fff;
-  flex-shrink: 0;
-}
-.mention-item .m-name { font-weight: 500; }
-.mention-item .m-hint { font-size: 12px; color: var(--ink3); margin-left: auto; }
-
 .toast {
   position: fixed;
   bottom: 80px;
@@ -705,15 +659,10 @@ textarea::placeholder { color: var(--ink3); }
   </div>
 
   <div class="input-bar">
-    <div style="position:relative">
-      <div class="mention-picker" id="mention-picker">
-        <div class="mention-picker-title">提及成員</div>
-        <div id="mention-list"></div>
-      </div>
-    </div>
+    <div class="mention-menu" id="mention-menu"></div>
     <div class="input-inner">
       <textarea id="txt" rows="1"
-        placeholder="輸入訊息… 用 @gemini 呼叫 AI，Enter 發送"
+        placeholder="輸入訊息… 用 @ai 呼叫 AI，Enter 發送，Shift+Enter 換行"
         onkeydown="onKey(event)"
         oninput="onInput(this)"></textarea>
       <button class="send-btn" id="send-btn" onclick="send()">
@@ -728,8 +677,8 @@ textarea::placeholder { color: var(--ink3); }
 <!-- ══════════════ FIREBASE SDK ══════════════ -->
 <script type="module">
 // ──────────── Firebase 初始化 ────────────
-import { initializeApp }          from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, push, set, onValue, serverTimestamp, get, onDisconnect }
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, push, set, onValue, serverTimestamp, get, onDisconnect, query, limitToLast }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
@@ -747,7 +696,6 @@ const isConfigured = firebaseConfig.apiKey !== "YOUR_API_KEY";
 let db, roomId, myId, myName, myColorIdx;
 let aiLock = false;
 
-const USER_COLORS = ['--u0','--u1','--u2','--u3','--u4'];
 const COLOR_HEX   = ['#c8410a','#2a6e4a','#1a4a8a','#7a3a8a','#8a5a1a'];
 
 // ──────────── 設定狀態提示 ────────────
@@ -760,7 +708,8 @@ if (isConfigured) {
 
 // ──────────── 工具 ────────────
 function genId(len=6) {
-  return Math.random().toString(36).slice(2, 2+len).toUpperCase();
+  // padEnd 確保即使 random 極小也有足夠字元
+  return Math.random().toString(36).padEnd(len + 3, '0').slice(2, 2 + len).toUpperCase();
 }
 function now() {
   return new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
@@ -769,13 +718,17 @@ function esc(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 function highlightMention(s) {
-  return s.replace(/(@gemini)/gi, '<strong style="color:var(--accent)">$1</strong>');
+  return s.replace(/@(\w+)/g, function(match, name) {
+    var isAI = /^(ai|groq|gemini|claude)$/i.test(name);
+    var color = isAI ? 'var(--accent)' : 'var(--u2)';
+    return '<strong style="color:' + color + '">' + match + '</strong>';
+  });
 }
 function toast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'), 2200);
+  setTimeout(()=>t.classList.remove('show'), 3000);
 }
 
 // ──────────── Lobby ────────────
@@ -800,8 +753,9 @@ async function enter(name, rid) {
   myName    = name;
   roomId    = rid;
   myId      = 'u_' + genId(8);
+  renderedKeys = new Set(); // BUG3: 清空舊渲染狀態
 
-  const app = initializeApp(firebaseConfig);
+  const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
   db = getDatabase(app);
 
   // 分配顏色（取已用顏色後，選第一個未用的）
@@ -843,6 +797,7 @@ async function enter(name, rid) {
   document.getElementById('mobile-room-code').textContent = roomId;
   const url = location.href.split('?')[0] + '?r=' + roomId;
   document.getElementById('share-url').textContent = url;
+  document.title = 'chat.ai · ' + roomId;
 
   // 監聽訊息
   onValue(ref(db, `rooms/${roomId}/messages`), snap => {
@@ -856,24 +811,48 @@ async function enter(name, rid) {
   });
 
   document.getElementById('txt').focus();
+
+  // BUG5: visibilitychange 只添加一次，切回後清除未讀數
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      document.title = 'chat.ai · ' + roomId;
+    }
+  });
+
+  // 請求瀏覽器通知權限
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
 }
 
-// ──────────── 渲染訊息 ────────────
-let lastKey = null;
+// ──────────── 渲染訊息（增量渲染，避免全量重繪） ────────────
+let renderedKeys = new Set();
 
 function renderMessages(data) {
   const wrap = document.getElementById('msgs');
-  wrap.innerHTML = '';
-  lastKey = null;
-  Object.entries(data).forEach(([k, m]) => {
+  const entries = Object.entries(data);
+  let appended = false;
+
+  entries.forEach(([k, m]) => {
+    if (renderedKeys.has(k)) return; // 已渲染過，跳過
+    renderedKeys.add(k);
     if (m.type === 'system') {
       appendSys(m.text);
     } else {
       appendMsg(m);
+      // 被 @提及時，頁面內 toast 提示
+      if (m.userId !== myId && new RegExp('@' + myName, 'i').test(m.text || '')) {
+        toast('🔔 ' + (m.userName || 'AI') + ' 提及了你！');
+      }
     }
-    lastKey = k;
+    appended = true;
   });
-  wrap.scrollTop = wrap.scrollHeight;
+
+  // 只在有新訊息時才捲動
+  if (appended) {
+    const isNearBottom = wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 120;
+    if (isNearBottom) wrap.scrollTop = wrap.scrollHeight;
+  }
 }
 
 function appendSys(text) {
@@ -887,8 +866,10 @@ function appendMsg(m) {
   const wrap   = document.getElementById('msgs');
   const isMe   = m.userId === myId;
   const isAi   = m.userId === 'ai';
-  const color  = isAi ? '#1a1a1a' : COLOR_HEX[m.colorIdx ?? 0];
-  const initials = isAi ? 'AI' : (m.userName?.[0] ?? '?');
+  // Use stored aiColor/aiAvatar from message (supports Claude vs Gemini)
+  const color    = isAi ? (m.aiColor || '#6c3fa0') : COLOR_HEX[m.colorIdx ?? 0];
+  const initials = isAi ? (m.aiAvatar || 'AI')     : (m.userName?.[0] ?? '?');
+  const dispName = isAi ? (m.userName === 'AI' ? 'AI 助手' : m.userName + ' AI') : esc(m.userName);
 
   const g = document.createElement('div');
   g.className = 'msg-group' + (isMe ? ' mine' : '') + (isAi ? ' ai-group' : '');
@@ -896,13 +877,33 @@ function appendMsg(m) {
   g.innerHTML = `
     <div class="msg-meta">
       <div class="meta-avatar" style="background:${color}">${initials}</div>
-      <span class="meta-name">${isAi ? 'Gemini AI' : esc(m.userName)}</span>
+      <span class="meta-name">${dispName}</span>
     </div>
     <div class="bubble">${highlightMention(esc(m.text))}</div>
     <span class="bubble-time">${m.time || ''}</span>
   `;
   wrap.appendChild(g);
   wrap.scrollTop = wrap.scrollHeight;
+
+  // 未讀 badge 在 title
+  if (!isMe && document.hidden) {
+    const base = 'chat.ai · ' + (roomId || '');
+    const titleMatch = document.title.match(/\((\d+)\)/);
+    const cnt = titleMatch ? parseInt(titleMatch[1]) + 1 : 1;
+    document.title = '(' + cnt + ') ' + base;
+  }
+  // 瀏覽器通知：非自己的訊息 + 頁面未聚焦
+  if (!isMe && document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+    const senderName = isAi ? (m.userName + ' AI') : esc(m.userName);
+    const body = m.text.length > 60 ? m.text.slice(0, 60) + '…' : m.text;
+    // 若被 @自己名字 就加 🔔
+    const isMentioned = new RegExp('@' + myName, 'i').test(m.text);
+    const title = isMentioned ? `🔔 ${senderName} 提及了你` : `💬 ${senderName}`;
+    try {
+      const n = new Notification(title, { body, tag: 'chat-msg' });
+      n.onclick = () => { window.focus(); n.close(); };
+    } catch(e) {}
+  }
 }
 
 // ──────────── 渲染用戶 ────────────
@@ -946,50 +947,42 @@ function renderUsers(usersData) {
 }
 
 // ──────────── 發送訊息 ────────────
+let sendLock = false;
 window.send = async function() {
+  if (sendLock) return;
   const ta   = document.getElementById('txt');
   const text = ta.value.trim();
-  if (!text || aiLock) return;
+  if (!text) return;
+  sendLock = true;
+  setTimeout(() => { sendLock = false; }, 500);
   hideMentionMenu();
 
   ta.value = '';
   resize(ta);
 
-  // 寫入用戶訊息
+  // 寫入用戶訊息（一般訊息不受 aiLock 影響）
   await push(ref(db, `rooms/${roomId}/messages`), {
     type: 'chat', userId: myId, userName: myName,
     colorIdx: myColorIdx, text, time: now(), ts: serverTimestamp()
   });
 
-  // 只有「訊息發送者本人」且包含 @gemini 才呼叫 AI
-  // 其他 client 只是 listener，不重複觸發
-  if (/@gemini/i.test(text)) {
-    await callAI();
+  // 只有「訊息發送者本人」且包含 AI mention 才呼叫 AI
+  // aiLock 只阻擋重複呼叫 AI，不阻擋一般聊天
+  if (isAITrigger(text)) {
+    if (aiLock) { toast('⏳ AI 正在回應中，請稍後再呼叫'); return; }
+    await callAI(text);
   }
 };
 
 window.onKey = function(e) {
-  if (mentionActive) {
-    const items = document.querySelectorAll('#mention-list .mention-item');
-    if (e.key === 'ArrowDown') {
+  const menu = document.getElementById('mention-menu');
+  if (menu && menu.classList.contains('show')) {
+    // When mention menu is open: intercept nav keys, Enter inserts mention only
+    if (['ArrowDown','ArrowUp','Enter','Tab','Escape'].includes(e.key)) {
       e.preventDefault();
-      mentionIdx = Math.min(mentionIdx + 1, items.length - 1);
-      items.forEach((el, i) => el.classList.toggle('active', i === mentionIdx));
-      return;
+      onMentionKey(e);
+      return; // never fall through to send
     }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      mentionIdx = Math.max(mentionIdx - 1, 0);
-      items.forEach((el, i) => el.classList.toggle('active', i === mentionIdx));
-      return;
-    }
-    if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault();
-      const active = items[mentionIdx];
-      if (active) insertMention(active.dataset.name);
-      return;
-    }
-    if (e.key === 'Escape') { closeMentionPicker(); return; }
   }
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.send(); }
 };
@@ -999,159 +992,113 @@ window.resize = function(el) {
   el.style.height = Math.min(el.scrollHeight, 120) + 'px';
 };
 
-// ──────────── @ Mention picker ────────────
-let mentionActive = false;
-let mentionStart  = -1;
-let mentionIdx    = 0;
+// ──────────── AI（透過 Apps Script Proxy 呼叫 Groq，避免 CORS） ────────────
+// Key 藏在 Apps Script 後端，前端只傳 messages，不暴露 Key
+const PROXY_URL   = 'https://script.google.com/macros/s/AKfycbyXXj4tTxEIjYjAc1i1pYoQCClqEw6OKHgrz9j7JW71iuWSYbOCdJQwhWBELRUoJyvC/exec';
+const MAX_HISTORY = 20;
+const AI_TIMEOUT  = 30000;
 
-const GEMINI_MENTION = { id: 'ai', name: 'Gemini', color: '#1a6ef5', hint: 'AI 助手' };
+const AI_CFG = { name: 'AI', avatar: 'AI', color: '#6c3fa0' };
 
-function getMentionCandidates(query) {
-  const allUsers = [GEMINI_MENTION];
-  // Add online users (excluding self)
-  Object.values(window._onlineUsers || {}).forEach(u => {
-    if (u.id !== myId) allUsers.push({ id: u.id, name: u.name, color: COLOR_HEX[u.colorIdx ?? 0], hint: '在線' });
-  });
-  if (!query) return allUsers;
-  return allUsers.filter(u => u.name.toLowerCase().startsWith(query.toLowerCase()));
+function isAITrigger(text) {
+  return /@(ai|groq|gemini|claude)/i.test(text);
 }
 
-function renderMentionPicker(query) {
-  const picker = document.getElementById('mention-picker');
-  const list   = document.getElementById('mention-list');
-  const items  = getMentionCandidates(query);
-  if (items.length === 0) { closeMentionPicker(); return; }
-
-  mentionIdx = 0;
-  list.innerHTML = '';
-  items.forEach((u, i) => {
-    const el = document.createElement('div');
-    el.className = 'mention-item' + (i === 0 ? ' active' : '');
-    el.dataset.name = u.name;
-    el.innerHTML = `
-      <div class="m-avatar" style="background:${u.color}">${u.name[0]}</div>
-      <span class="m-name">${u.name}</span>
-      <span class="m-hint">${u.hint || ''}</span>
-    `;
-    el.onmousedown = (e) => { e.preventDefault(); insertMention(u.name); };
-    list.appendChild(el);
-  });
-  picker.classList.add('open');
-  mentionActive = true;
-}
-
-function closeMentionPicker() {
-  document.getElementById('mention-picker').classList.remove('open');
-  mentionActive = false;
-  mentionStart  = -1;
-}
-
-function insertMention(name) {
-  const ta  = document.getElementById('txt');
-  const val = ta.value;
-  const before = val.slice(0, mentionStart);
-  const after  = val.slice(ta.selectionStart);
-  ta.value = before + '@' + name + ' ' + after;
-  const pos = (before + '@' + name + ' ').length;
-  ta.setSelectionRange(pos, pos);
-  ta.focus();
-  closeMentionPicker();
-  resize(ta);
-}
-
-window.onInput = function(el) {
-  resize(el);
-  const val    = el.value;
-  const cursor = el.selectionStart;
-  // Find last @ before cursor
-  const segment = val.slice(0, cursor);
-  const atIdx   = segment.lastIndexOf('@');
-  if (atIdx === -1) { closeMentionPicker(); return; }
-  // No space between @ and cursor
-  const query = segment.slice(atIdx + 1);
-  if (/\s/.test(query)) { closeMentionPicker(); return; }
-  mentionStart = atIdx;
-  renderMentionPicker(query);
-};
-
-// Store online users for mention picker
-window._onlineUsers = {};
-
-
-// ──────────── Gemini API ────────────
-async function callAI() {
+async function callAI(triggerText) {
   aiLock = true;
   document.getElementById('send-btn').disabled = true;
 
-  // typing indicator
+  // ── 顯示 typing indicator ──
   const wrap = document.getElementById('msgs');
   const ind  = document.createElement('div');
   ind.className = 'msg-group ai-group';
   ind.id = 'typing';
   ind.innerHTML = `
     <div class="msg-meta">
-      <div class="meta-avatar" style="background:#1a1a1a">AI</div>
-      <span class="meta-name">Gemini AI</span>
+      <div class="meta-avatar" style="background:${AI_CFG.color}">${AI_CFG.avatar}</div>
+      <span class="meta-name">${AI_CFG.name} 正在輸入…</span>
     </div>
     <div class="typing-bubble"><span></span><span></span><span></span></div>
   `;
   wrap.appendChild(ind);
   wrap.scrollTop = wrap.scrollHeight;
 
-  try {
-    // 抓最近 30 則訊息構建 history
-    const snap = await get(ref(db, `rooms/${roomId}/messages`));
-    const allMsgs = snap.exists() ? Object.values(snap.val()) : [];
-    const chatMsgs = allMsgs.filter(m => m.type === 'chat');
+  // ── Timeout 保護 ──
+  const lockTimer = setTimeout(() => {
+    aiLock = false;
+    document.getElementById('send-btn').disabled = false;
+    document.getElementById('typing')?.remove();
+  }, AI_TIMEOUT);
 
-    // 合併相鄰同角色訊息
-    const apiMsgs = [];
+  try {
+    // ── 取得最近 MAX_HISTORY 則（用 limitToLast 避免讀全部） ──
+    const msgsQuery = query(ref(db, `rooms/${roomId}/messages`), limitToLast(MAX_HISTORY + 10));
+    const snap = await get(msgsQuery);
+    const allMsgs = snap.exists() ? Object.values(snap.val()) : [];
+    const chatMsgs = allMsgs.filter(m => m.type === 'chat').slice(-MAX_HISTORY);
+
+    // ── 轉換為 OpenAI messages 格式 ──
+    const messages = [{
+      role: 'system',
+      content: '你是 AI，一個聰明親切的繁體中文 AI 助手，正在參與一個多人共享對話室。' +
+               '用戶可以用 @ai、@groq、@gemini、@claude 呼叫你。' +
+               '訊息格式為 [名稱]: 內容，對話中可能有多位使用者。' +
+               '請用繁體中文自然回應，可以指名回覆呼叫你的使用者。' +
+               '回應簡潔有力，不要過於冗長。技術問題可適當詳細。'
+    }];
+
     for (const m of chatMsgs) {
-      const role = m.userId === 'ai' ? 'assistant' : 'user';
+      const role    = m.userId === 'ai' ? 'assistant' : 'user';
       const content = m.userId === 'ai' ? m.text : `[${m.userName}]: ${m.text}`;
-      if (apiMsgs.length && apiMsgs[apiMsgs.length-1].role === role) {
-        apiMsgs[apiMsgs.length-1].content += '\n' + content;
+      if (messages.length > 1 && messages[messages.length-1].role === role) {
+        messages[messages.length-1].content += '\n' + content;
       } else {
-        apiMsgs.push({ role, content });
+        messages.push({ role, content });
       }
     }
 
-    // 透過 Apps Script proxy 呼叫 Gemini（免費，Key 藏在後端）
-    const PROXY_URL = 'https://script.google.com/macros/s/AKfycbyXXj4tTxEIjYjAc1i1pYoQCClqEw6OKHgrz9j7JW71iuWSYbOCdJQwhWBELRUoJyvC/exec';
-
-    // 轉換訊息格式給 Gemini
-    const geminiContents = apiMsgs.map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }]
-    }));
-
-    const payload = {
-      action: 'gemini',
-      contents: geminiContents,
-      systemInstruction: '你是一個親切的 AI 助手，名字叫 Gemini，正在參與一個多人共享對話室。只有當用戶訊息中包含 @gemini 時你才會被呼叫。訊息格式為 [名稱]: 內容，對話中可能有多位使用者。請用繁體中文自然回應，可以指名回覆呼叫你的使用者。回應簡潔有力，不要過於冗長。'
-    };
-
+    // ── 透過 Apps Script proxy 呼叫 Groq ──
     const res = await fetch(PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ action: 'groq', messages, max_tokens: 1024 })
     });
 
-    const data = await res.json();
-    const aiText = data.text || data.error || '抱歉，無法取得回應。';
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data   = await res.json();
 
+    if (data.error) {
+      const msg = data.error || '';
+      const sec = msg.match(/try again in ([\d.]+)s/i)?.[1];
+      throw new Error(sec ? `rate_limit:${Math.ceil(sec)}` : 'api_error:' + msg);
+    }
+
+    const aiText = data.text || data.choices?.[0]?.message?.content?.trim() || '抱歉，暫時無法取得回應。';
+
+    clearTimeout(lockTimer);
     document.getElementById('typing')?.remove();
 
     await push(ref(db, `rooms/${roomId}/messages`), {
-      type: 'chat', userId: 'ai', userName: 'Gemini',
+      type: 'chat', userId: 'ai', userName: AI_CFG.name,
+      aiColor: AI_CFG.color, aiAvatar: AI_CFG.avatar,
       text: aiText, time: now(), ts: serverTimestamp()
     });
 
   } catch(err) {
+    clearTimeout(lockTimer);
     document.getElementById('typing')?.remove();
+    console.error('[AI] error:', err.message);
+
+    let errMsg = '🔌 AI 暫時無法回應，請稍後再試。';
+    if (err.message.startsWith('rate_limit')) {
+      const sec = err.message.split(':')[1];
+      errMsg = sec ? `⏳ 請求過於頻繁，請等待 ${sec} 秒後再試。` : '⏳ 請求過於頻繁，請稍後再試。';
+    }
+
     await push(ref(db, `rooms/${roomId}/messages`), {
-      type: 'chat', userId: 'ai', userName: 'Gemini',
-      text: '（連線錯誤，請稍後再試）', time: now(), ts: serverTimestamp()
+      type: 'chat', userId: 'ai', userName: AI_CFG.name,
+      aiColor: AI_CFG.color, aiAvatar: AI_CFG.avatar,
+      text: errMsg, time: now(), ts: serverTimestamp()
     });
   }
 
@@ -1164,7 +1111,8 @@ async function callAI() {
 let mentionStart = -1;
 let mentionSelected = 0;
 
-function onInput(el) {
+window.onInput = function onInput(el) {
+  resize(el);
   const val = el.value;
   const pos = el.selectionStart;
   // Find last @ before cursor
@@ -1181,9 +1129,12 @@ function onInput(el) {
 
 function showMentionMenu(query) {
   const menu = document.getElementById('mention-menu');
-  // Build candidate list: Gemini + current room users
+  // Build candidate list: AI + alias + room users
   const candidates = [
-    { id: 'gemini', name: 'Gemini', desc: 'AI 助手', color: '#1a6ef5', initial: 'G' }
+    { id: 'ai',     name: 'AI',     desc: 'AI 助手（Groq）', color: '#6c3fa0', initial: 'AI' },
+    { id: 'groq',   name: 'Groq',   desc: 'AI 助手（alias）', color: '#f5a623', initial: 'G' },
+    { id: 'gemini', name: 'Gemini', desc: 'AI 助手（alias）', color: '#1a6ef5', initial: 'G' },
+    { id: 'claude', name: 'Claude', desc: 'AI 助手（alias）', color: '#8b5cf6', initial: 'C' }
   ];
   // Add room users (excluding self)
   Object.entries(window._roomUsers || {}).forEach(([id, u]) => {
@@ -1241,17 +1192,20 @@ function onMentionKey(e) {
   items.forEach((el, i) => el.classList.toggle('selected', i === mentionSelected));
 }
 
-function selectMention(name) {
+window.selectMention = function selectMention(name) {
   const ta = document.getElementById('txt');
   const val = ta.value;
   const pos = ta.selectionStart;
-  const before = val.slice(0, mentionStart);
-  const after = val.slice(pos);
+  // Capture mentionStart BEFORE hideMentionMenu resets it
+  const start = mentionStart >= 0 ? mentionStart : val.lastIndexOf('@', pos);
+  hideMentionMenu();
+  if (start < 0) return;
+  const before = val.slice(0, start);
+  const after  = val.slice(pos);
   ta.value = before + '@' + name + ' ' + after;
   const newPos = before.length + name.length + 2;
   ta.setSelectionRange(newPos, newPos);
   ta.focus();
-  hideMentionMenu();
   resize(ta);
 }
 
